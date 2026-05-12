@@ -6,9 +6,13 @@ import {
   Search,
   Loader2,
   TrendingUp,
+  User,
+  CheckCircle2,
+  ShoppingBag,
 } from "lucide-react";
-import { motion } from "motion/react";
-import { getCatalogItems, type CatalogItem } from "../../lib/database";
+import { motion, AnimatePresence } from "motion/react";
+import { useAuth } from "../contexts/AuthContext";
+import { getCatalogItems, deleteCatalogItem, addWishlistItem, type CatalogItem } from "../../lib/database";
 
 function formatIDR(val: number) {
   return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(val);
@@ -19,6 +23,12 @@ export function CatalogList() {
   const [items, setItems] = useState<CatalogItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const { user } = useAuth();
+
+  const [sellItem, setSellItem] = useState<CatalogItem | null>(null);
+  const [customerName, setCustomerName] = useState("");
+  const [dpStatus, setDpStatus] = useState<"pending" | "paid">("pending");
+  const [selling, setSelling] = useState(false);
 
   useEffect(() => {
     loadItems();
@@ -33,6 +43,33 @@ export function CatalogList() {
       console.error("Failed to load catalog:", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSell = async () => {
+    if (!sellItem || !user || !customerName) return;
+    setSelling(true);
+    try {
+      await addWishlistItem({
+        user_id: user.id,
+        customer_name: customerName,
+        item_name: sellItem.item_name,
+        qty: 1,
+        est_price: sellItem.final_price_idr,
+        dp_amount: dpStatus === "paid" ? sellItem.final_price_idr : 0,
+        dp_status: dpStatus,
+        image_url: null,
+      });
+      await deleteCatalogItem(sellItem.id);
+
+      setSellItem(null);
+      setCustomerName("");
+      setDpStatus("pending");
+      loadItems();
+    } catch (err) {
+      console.error("Failed to sell item:", err);
+    } finally {
+      setSelling(false);
     }
   };
 
@@ -126,6 +163,12 @@ export function CatalogList() {
                       <span className="text-sm font-bold text-blue-600">{formatIDR(item.final_price_idr)}</span>
                     </div>
                   </div>
+                  <button
+                    onClick={() => setSellItem(item)}
+                    className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0 active:scale-95 transition-transform"
+                  >
+                    <ShoppingBag className="w-5 h-5 text-blue-600" />
+                  </button>
                 </div>
 
                 <div className="mt-3 pt-3 border-t border-gray-50 flex items-center justify-between">
@@ -142,6 +185,94 @@ export function CatalogList() {
           })}
         </div>
       </div>
+
+      {/* Sell Modal */}
+      <AnimatePresence>
+        {sellItem && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          >
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+              className="w-full max-w-md bg-white rounded-3xl overflow-hidden shadow-xl"
+            >
+              <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+                <div>
+                  <h3 className="font-bold text-gray-900 text-lg">Sell Item</h3>
+                  <p className="text-gray-400 text-sm">{sellItem.item_name}</p>
+                </div>
+                <button
+                  onClick={() => setSellItem(null)}
+                  className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 text-gray-500"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="p-5 space-y-4">
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5 block">
+                    Customer Name
+                  </label>
+                  <div className="relative">
+                    <User className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      placeholder="e.g. Budi"
+                      className="w-full h-12 bg-[#F4F6FA] rounded-xl pl-10 pr-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">
+                    Payment Status
+                  </label>
+                  <div className="flex bg-[#F4F6FA] p-1 rounded-xl">
+                    <button
+                      onClick={() => setDpStatus("pending")}
+                      className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${
+                        dpStatus === "pending" ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"
+                      }`}
+                    >
+                      Belum Bayar
+                    </button>
+                    <button
+                      onClick={() => setDpStatus("paid")}
+                      className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${
+                        dpStatus === "paid" ? "bg-green-500 text-white shadow-sm shadow-green-500/20" : "text-gray-500 hover:text-gray-700"
+                      }`}
+                    >
+                      Lunas
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleSell}
+                  disabled={selling || !customerName}
+                  className="w-full h-[52px] mt-2 bg-gradient-to-r from-[#2563EB] to-[#1d4ed8] text-white rounded-2xl font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-70"
+                >
+                  {selling ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-5 h-5" /> Confirm Sale — {formatIDR(sellItem.final_price_idr)}
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

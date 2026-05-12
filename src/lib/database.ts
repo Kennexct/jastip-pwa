@@ -65,6 +65,14 @@ export async function updateWishlistDp(id: string, dpAmount: number, dpStatus: s
   if (error) throw error;
 }
 
+export async function updateWishlistPrice(id: string, actualPrice: number) {
+  const { error } = await supabase
+    .from('wishlist_items')
+    .update({ est_price: actualPrice })
+    .eq('id', id);
+  if (error) throw error;
+}
+
 // ==================== CATALOG ====================
 
 export async function getCatalogItems() {
@@ -84,6 +92,14 @@ export async function addCatalogItem(item: Omit<CatalogItem, 'id' | 'created_at'
     .single();
   if (error) throw error;
   return data as CatalogItem;
+}
+
+export async function deleteCatalogItem(id: string) {
+  const { error } = await supabase
+    .from('catalog_items')
+    .delete()
+    .eq('id', id);
+  if (error) throw error;
 }
 
 // ==================== DASHBOARD STATS ====================

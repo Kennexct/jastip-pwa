@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useAuth } from "../contexts/AuthContext";
-import { getWishlistItems, addWishlistItem, deleteWishlistItem, type WishlistItem } from "../../lib/database";
+import { getWishlistItems, addWishlistItem, deleteWishlistItem, updateWishlistPrice, addCatalogItem, type WishlistItem } from "../../lib/database";
 
 type DpStatus = "pending" | "paid" | "partial";
 
@@ -50,6 +50,11 @@ export function Wishlist() {
   const [saved, setSaved] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const [fulfillItem, setFulfillItem] = useState<WishlistItem | null>(null);
+  const [actualPrice, setActualPrice] = useState("");
+  const [boughtQty, setBoughtQty] = useState("");
+  const [fulfilling, setFulfilling] = useState(false);
 
   // Fetch real data
   useEffect(() => {
@@ -115,6 +120,46 @@ export function Wishlist() {
       setItems(items.filter(i => i.id !== id));
     } catch (err) {
       console.error("Failed to delete:", err);
+    }
+  };
+
+  const handleFulfill = async () => {
+    if (!fulfillItem || !user) return;
+    setFulfilling(true);
+    try {
+      const priceNum = parseInt(actualPrice) || fulfillItem.est_price;
+      const bQty = parseInt(boughtQty) || fulfillItem.qty;
+
+      // 1. Update Wishlist price
+      await updateWishlistPrice(fulfillItem.id, priceNum);
+
+      // 2. Split excess to Catalog (Ready Stock)
+      if (bQty > fulfillItem.qty) {
+        const excess = bQty - fulfillItem.qty;
+        const promises = [];
+        for (let i = 0; i < excess; i++) {
+          promises.push(
+            addCatalogItem({
+              user_id: user.id,
+              item_name: fulfillItem.item_name,
+              base_price: priceNum,
+              currency: "IDR",
+              exchange_rate: 1,
+              margin_type: "nominal",
+              margin_value: 0,
+              final_price_idr: priceNum,
+            })
+          );
+        }
+        await Promise.all(promises);
+      }
+
+      setFulfillItem(null);
+      loadItems();
+    } catch (err) {
+      console.error("Failed to fulfill:", err);
+    } finally {
+      setFulfilling(false);
     }
   };
 
@@ -251,12 +296,26 @@ export function Wishlist() {
                         </div>
                         <p className="text-sm font-semibold text-gray-800 leading-tight">{item.item_name}</p>
                       </div>
-                      <button
-                        onClick={() => handleDelete(item.id)}
-                        className="w-7 h-7 rounded-lg bg-gray-50 flex items-center justify-center flex-shrink-0"
-                      >
-                        <Trash2 className="w-3.5 h-3.5 text-gray-400" />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {item.dp_status !== "paid" && (
+                          <button
+                            onClick={() => {
+                              setFulfillItem(item);
+                              setActualPrice(item.est_price.toString());
+                              setBoughtQty(item.qty.toString());
+                            }}
+                            className="text-[10px] font-bold bg-[#2563EB] text-white px-2 py-1 rounded-lg uppercase tracking-wide active:scale-95 transition-transform"
+                          >
+                            Fulfill
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleDelete(item.id)}
+                          className="w-7 h-7 rounded-lg bg-gray-50 flex items-center justify-center flex-shrink-0"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-gray-400" />
+                        </button>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2 mt-2">
                       <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-lg font-medium">x{item.qty}</span>
@@ -346,6 +405,95 @@ export function Wishlist() {
               </div>
             </motion.div>
           </>
+        )}
+      </AnimatePresence>
+
+      {/* Fulfill Modal */}
+      <AnimatePresence>
+        {fulfillItem && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          >
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+              className="w-full max-w-md bg-white rounded-3xl overflow-hidden shadow-xl"
+            >
+              <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+                <div>
+                  <h3 className="font-bold text-gray-900 text-lg">Fulfill Order</h3>
+                  <p className="text-gray-400 text-sm">{fulfillItem.item_name}</p>
+                </div>
+                <button
+                  onClick={() => setFulfillItem(null)}
+                  className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 text-gray-500"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="p-5 space-y-4">
+                <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
+                  <p className="text-blue-800 text-xs">
+                    Masukkan jumlah barang yang berhasil dibeli. Jika Anda membeli lebih dari permintaan, sisa barang otomatis masuk ke <b>Ready Stock</b>.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5 block">
+                    Quantity Bought (Req: {fulfillItem.qty})
+                  </label>
+                  <div className="relative">
+                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2">
+                      <Hash className="w-4 h-4 text-gray-400" />
+                    </div>
+                    <input
+                      type="number"
+                      value={boughtQty}
+                      onChange={(e) => setBoughtQty(e.target.value)}
+                      className="w-full h-12 bg-[#F4F6FA] rounded-xl pl-10 pr-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5 block">
+                    Actual Price Paid (IDR)
+                  </label>
+                  <div className="relative">
+                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2">
+                      <DollarSign className="w-4 h-4 text-gray-400" />
+                    </div>
+                    <input
+                      type="number"
+                      value={actualPrice}
+                      onChange={(e) => setActualPrice(e.target.value)}
+                      className="w-full h-12 bg-[#F4F6FA] rounded-xl pl-10 pr-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleFulfill}
+                  disabled={fulfilling}
+                  className="w-full h-[52px] mt-2 bg-[#2563EB] text-white rounded-2xl font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-70"
+                >
+                  {fulfilling ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-5 h-5" /> Fulfill & Split
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>
