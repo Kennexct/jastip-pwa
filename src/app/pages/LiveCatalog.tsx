@@ -12,7 +12,7 @@ import {
   CheckCircle2,
   ImageIcon,
   Sparkles,
-  ScanText,
+  Type,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useAuth } from "../contexts/AuthContext";
@@ -324,7 +324,7 @@ export function LiveCatalog() {
               )}
               {ocrDone && !ocrLoading && !itemName && (
                 <div className="flex items-center gap-1.5 bg-amber-50 px-2.5 py-1 rounded-lg">
-                  <ScanText className="w-3 h-3 text-amber-500" />
+                  <Type className="w-3 h-3 text-amber-500" />
                   <span className="text-amber-600 text-[11px] font-semibold">Ketik manual</span>
                 </div>
               )}
