@@ -19,9 +19,11 @@ import {
   EyeOff,
   Bell,
   Save,
+  LogOut,
 } from "lucide-react";
 import { useNavigate } from "react-router";
 import { motion, AnimatePresence } from "motion/react";
+import { useAuth } from "../contexts/AuthContext";
 
 /* ─── Data ─────────────────────────────────────────────── */
 const countries = [
@@ -319,6 +321,7 @@ function SaveProgressOverlay({
 /* ─── Main Component ─────────────────────────────────────── */
 export function Settings() {
   const navigate = useNavigate();
+  const { signOut } = useAuth();
   const fileRef = useRef<HTMLInputElement>(null);
 
   /* Saved originals to track dirty */
@@ -862,6 +865,22 @@ export function Settings() {
                 .filter(Boolean).join(" · ")} will be updated
             </p>
           )}
+        </motion.div>
+
+        {/* ── Logout Button ───────────────── */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.3 }}
+        >
+          <button
+            onClick={async () => { await signOut(); navigate("/login"); }}
+            className="w-full h-[52px] rounded-2xl flex items-center justify-center gap-2 bg-white border border-red-200 text-red-500 font-semibold transition-all active:scale-[0.98]"
+          >
+            <LogOut className="w-4.5 h-4.5" />
+            Logout
+          </button>
+          <p className="text-center text-xs text-gray-300 mt-3">JastipFlow v1.0</p>
         </motion.div>
       </div>
 

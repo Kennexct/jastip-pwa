@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { getDashboardStats } from "../../lib/database";
+import { useAuth } from "../contexts/AuthContext";
 
 function formatIDR(val: number) {
   if (val >= 1000000) return `Rp ${(val / 1000000).toFixed(1)}M`;
@@ -29,6 +30,7 @@ function formatIDRFull(val: number) {
 
 export function Dashboard() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     pendingWishlist: 0,
@@ -67,7 +69,9 @@ export function Dashboard() {
         <div className="flex items-center justify-between mb-5">
           <div>
             <p className="text-blue-200 text-sm">Good morning,</p>
-            <h1 className="text-white text-[26px] font-bold leading-tight">Dewi 👋</h1>
+            <h1 className="text-white text-[26px] font-bold leading-tight">
+              {user?.email?.split("@")[0] || "User"} 👋
+            </h1>
           </div>
           <button className="relative w-10 h-10 rounded-full bg-white/15 flex items-center justify-center backdrop-blur-sm">
             <Bell className="w-5 h-5 text-white" />
