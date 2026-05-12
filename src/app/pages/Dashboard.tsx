@@ -34,6 +34,7 @@ export function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     pendingWishlist: 0,
+    completedWishlist: 0,
     readyStock: 0,
     totalProfit: 0,
     unpaidBills: 0,
@@ -56,10 +57,10 @@ export function Dashboard() {
   };
 
   const metrics = [
-    { id: 1, label: "Pending Wishlist", value: stats.pendingWishlist.toString(), icon: Clock, iconBg: "bg-amber-50", iconColor: "text-amber-500" },
-    { id: 2, label: "Ready Stock", value: stats.readyStock.toString(), icon: Package, iconBg: "bg-blue-50", iconColor: "text-blue-500" },
-    { id: 3, label: "Est. Profit", value: formatIDR(stats.totalProfit), icon: TrendingUp, iconBg: "bg-green-50", iconColor: "text-green-500" },
-    { id: 4, label: "Unpaid Bills", value: formatIDR(stats.unpaidBills), icon: AlertCircle, iconBg: "bg-red-50", iconColor: "text-red-500" },
+    { id: 1, label: "Pending Wishlist", value: stats.pendingWishlist.toString(), icon: Clock, iconBg: "bg-amber-50", iconColor: "text-amber-500", path: "/wishlist?filter=pending" },
+    { id: 2, label: "Completed Wishlist", value: stats.completedWishlist.toString(), icon: CheckCircle2, iconBg: "bg-green-50", iconColor: "text-green-500", path: "/wishlist?filter=completed" },
+    { id: 3, label: "Ready Stock", value: stats.readyStock.toString(), icon: Package, iconBg: "bg-blue-50", iconColor: "text-blue-500", path: "/catalog" },
+    { id: 4, label: "Unpaid Bills", value: formatIDR(stats.unpaidBills), icon: AlertCircle, iconBg: "bg-red-50", iconColor: "text-red-500", path: "/reports?filter=unpaid" },
   ];
 
   return (
@@ -94,19 +95,20 @@ export function Dashboard() {
         ) : (
           <div className="grid grid-cols-2 gap-3">
             {metrics.map((m, i) => (
-              <motion.div
+              <motion.button
                 key={m.id}
+                onClick={() => navigate(m.path)}
                 initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.06 }}
-                className="bg-white rounded-2xl p-4 border border-gray-100"
+                className="bg-white rounded-2xl p-4 border border-gray-100 text-left active:scale-[0.98] transition-transform"
               >
                 <div className={`${m.iconBg} w-10 h-10 rounded-xl flex items-center justify-center mb-3`}>
                   <m.icon className={`w-5 h-5 ${m.iconColor}`} />
                 </div>
                 <div className="text-2xl font-bold text-gray-900 leading-none">{m.value}</div>
                 <div className="text-gray-400 text-xs mt-1.5">{m.label}</div>
-              </motion.div>
+              </motion.button>
             ))}
           </div>
         )}

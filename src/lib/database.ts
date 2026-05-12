@@ -97,7 +97,8 @@ export async function getDashboardStats() {
   const wishlist = (wishlistRes.data || []) as WishlistItem[];
   const catalog = (catalogRes.data || []) as CatalogItem[];
 
-  const pendingWishlist = wishlist.filter(w => w.dp_status === 'pending').length;
+  const pendingWishlist = wishlist.filter(w => w.dp_status === 'pending' || w.dp_status === 'partial').length;
+  const completedWishlist = wishlist.filter(w => w.dp_status === 'paid').length;
   const readyStock = catalog.length;
   const totalProfit = catalog.reduce((sum, c) => {
     const baseIDR = c.base_price * c.exchange_rate;
@@ -119,6 +120,7 @@ export async function getDashboardStats() {
 
   return {
     pendingWishlist,
+    completedWishlist,
     readyStock,
     totalProfit,
     unpaidBills,

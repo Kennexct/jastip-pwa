@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import {
   ChevronLeft,
   MessageCircle,
@@ -134,6 +134,9 @@ function CustomerCard({ customer }: { customer: ReturnType<typeof groupByCustome
 
 export function Reports() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filterBills = searchParams.get("filter") || "all";
+
   const [activeTab, setActiveTab] = useState<"bills" | "profit">("bills");
   const [loading, setLoading] = useState(true);
   const [customers, setCustomers] = useState<ReturnType<typeof groupByCustomer>>([]);
@@ -161,7 +164,13 @@ export function Reports() {
     }
   };
 
-  const filteredCustomers = customers.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
+  let filteredCustomers = customers;
+  if (filterBills === "unpaid") {
+    filteredCustomers = filteredCustomers.filter(c => c.status !== "paid");
+  }
+  if (searchQuery) {
+    filteredCustomers = filteredCustomers.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
+  }
 
   return (
     <div className="min-h-screen bg-[#F4F6FA]">
@@ -219,7 +228,30 @@ export function Reports() {
 
         {activeTab === "bills" && !loading && (
           <>
-            <div className="bg-white rounded-xl border border-gray-100 flex items-center gap-2 px-3.5 h-11">
+            <div className="flex items-center gap-2 mb-4 px-1 pb-1 overflow-x-auto no-scrollbar">
+              <button
+                onClick={() => setSearchParams({ filter: "all" })}
+                className={`whitespace-nowrap px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
+                  filterBills === "all"
+                    ? "bg-[#2563EB] text-white shadow-md shadow-blue-500/20"
+                    : "bg-white text-gray-500 border border-gray-100 hover:bg-gray-50"
+                }`}
+              >
+                Semua Tagihan
+              </button>
+              <button
+                onClick={() => setSearchParams({ filter: "unpaid" })}
+                className={`whitespace-nowrap px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
+                  filterBills === "unpaid"
+                    ? "bg-[#2563EB] text-white shadow-md shadow-blue-500/20"
+                    : "bg-white text-gray-500 border border-gray-100 hover:bg-gray-50"
+                }`}
+              >
+                Belum Lunas
+              </button>
+            </div>
+
+            <div className="bg-white rounded-xl border border-gray-100 flex items-center gap-2 px-3.5 h-11 mb-4">
               <Search className="w-4 h-4 text-gray-400" />
               <input placeholder="Search customer..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="bg-transparent text-gray-700 text-sm flex-1 outline-none" />
             </div>

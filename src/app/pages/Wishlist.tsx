@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import {
   ChevronLeft,
   Upload,
@@ -33,6 +33,9 @@ function formatIDR(val: number) {
 
 export function Wishlist() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filterTab = searchParams.get("filter") || "all";
+  
   const { user } = useAuth();
   const [items, setItems] = useState<WishlistItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -125,10 +128,20 @@ export function Wishlist() {
   };
 
   // Filter items
-  const filtered = items.filter(i =>
-    i.customer_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    i.item_name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  let filtered = items;
+  
+  if (filterTab === "pending") {
+    filtered = filtered.filter(i => i.dp_status === "pending" || i.dp_status === "partial");
+  } else if (filterTab === "completed") {
+    filtered = filtered.filter(i => i.dp_status === "paid");
+  }
+
+  if (searchQuery) {
+    filtered = filtered.filter(i =>
+      i.customer_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      i.item_name.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }
 
   const totalItems = items.length;
   const dpPending = items.filter(i => i.dp_status === "pending").length;
@@ -159,6 +172,23 @@ export function Wishlist() {
             onChange={(e) => setSearchQuery(e.target.value)}
             className="bg-transparent text-gray-700 placeholder-gray-400 text-sm flex-1 outline-none"
           />
+        </div>
+        
+        {/* Tabs */}
+        <div className="flex items-center gap-2 mt-4 px-1 pb-1 overflow-x-auto no-scrollbar">
+          {(["all", "pending", "completed"] as const).map(tab => (
+            <button
+              key={tab}
+              onClick={() => setSearchParams({ filter: tab })}
+              className={`whitespace-nowrap px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
+                filterTab === tab
+                  ? "bg-[#2563EB] text-white shadow-md shadow-blue-500/20"
+                  : "bg-white text-gray-500 border border-gray-100 hover:bg-gray-50"
+              }`}
+            >
+              {tab === "all" ? "All Items" : tab === "pending" ? "Pending DP" : "Completed"}
+            </button>
+          ))}
         </div>
       </div>
 

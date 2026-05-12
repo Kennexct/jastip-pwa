@@ -4,6 +4,7 @@ import { Dashboard } from "./pages/Dashboard";
 import { Settings } from "./pages/Settings";
 import { Wishlist } from "./pages/Wishlist";
 import { LiveCatalog } from "./pages/LiveCatalog";
+import { CatalogList } from "./pages/CatalogList";
 import { Fulfillment } from "./pages/Fulfillment";
 import { Reports } from "./pages/Reports";
 import { Login } from "./pages/Auth/Login";
@@ -23,6 +24,7 @@ export const router = createBrowserRouter([
           { path: "settings", Component: Settings },
           { path: "wishlist", Component: Wishlist },
           { path: "live-catalog", Component: LiveCatalog },
+          { path: "catalog", Component: CatalogList },
           { path: "fulfillment", Component: Fulfillment },
           { path: "reports", Component: Reports },
         ],
