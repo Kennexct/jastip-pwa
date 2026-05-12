@@ -887,29 +887,11 @@ export function Settings() {
                   </button>
                 ))}
               </div>
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 block">
-                Default Margin Value
-              </label>
-              <div className="relative">
-                <div className="absolute left-4 top-1/2 -translate-y-1/2 w-8 h-8 rounded-xl bg-green-100 flex items-center justify-center">
-                  <span className="text-green-700 font-black text-sm">{marginConfigType === "percent" ? "%" : "Rp"}</span>
-                </div>
-                <input
-                  type="number"
-                  value={marginConfigValue}
-                  onChange={(e) => setMarginConfigValue(e.target.value)}
-                  className="w-full h-[56px] bg-[#F4F6FA] rounded-2xl pl-16 pr-4 text-gray-900 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent"
-                  placeholder={marginConfigType === "percent" ? "20" : "50000"}
-                />
-              </div>
-              <div className="mt-2.5 bg-green-50 rounded-xl px-3.5 py-2.5 border border-green-100">
+              <div className="mt-3 bg-green-50 rounded-xl px-3.5 py-2.5 border border-green-100">
                 <p className="text-green-800 text-xs">
                   {marginConfigType === "percent"
-                    ? `For a Rp 500.000 item → Margin: Rp ${(500000 * Number(marginConfigValue || 0) / 100).toLocaleString("id-ID")}`
-                    : `Fixed margin of Rp ${Number(marginConfigValue || 0).toLocaleString("id-ID")} per item`}
+                    ? "Margin dihitung sebagai persentase dari harga dasar. Nilai bebas diisi saat Quick Add."
+                    : "Margin berupa nominal tetap (Rp). Nilai bebas diisi saat Quick Add."}
                 </p>
               </div>
             </div>

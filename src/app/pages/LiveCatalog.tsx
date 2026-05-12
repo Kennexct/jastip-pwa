@@ -10,8 +10,9 @@ import {
   Tag,
   Loader2,
   CheckCircle2,
-  X,
   ImageIcon,
+  Sparkles,
+  ScanText,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useAuth } from "../contexts/AuthContext";
@@ -28,14 +29,16 @@ export function LiveCatalog() {
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState("");
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
-  const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
   const streamRef = useRef<MediaStream | null>(null);
 
   // Form state
   const [itemName, setItemName] = useState("");
   const [basePrice, setBasePrice] = useState("");
+  const [margin, setMargin] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [ocrDone, setOcrDone] = useState(false);
 
   // Load settings
   const tripConfig = getTripConfig();
@@ -43,32 +46,75 @@ export function LiveCatalog() {
   const currency = tripConfig.currency;
   const exchangeRate = tripConfig.exchangeRate;
   const marginType = marginConfig.type;
-  const marginValue = parseFloat(marginConfig.value) || 0;
 
   // Calculations
   const basePriceNum = parseFloat(basePrice) || 0;
+  const marginNum = parseFloat(margin) || 0;
   const baseIDR = basePriceNum * exchangeRate;
-  const marginAmount = marginType === "percent" ? (baseIDR * marginValue) / 100 : marginValue;
+  const marginAmount = marginType === "percent" ? (baseIDR * marginNum) / 100 : marginNum;
   const finalIDR = baseIDR + marginAmount;
 
   const formatIDR = (val: number) =>
     new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(val);
 
-  // ========== Camera Functions ==========
-  const startCamera = useCallback(async (facing: "environment" | "user") => {
+  // ========== Camera: Select Main Lens ==========
+  const findMainCamera = async (): Promise<string | undefined> => {
     try {
-      // Stop previous stream
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(d => d.kind === "videoinput");
+
+      if (videoDevices.length <= 1) return undefined; // Only 1 camera, no need to pick
+
+      // Try to find the main rear camera (exclude wide, ultra-wide, macro)
+      const mainRear = videoDevices.find(d => {
+        const label = d.label.toLowerCase();
+        return (
+          (label.includes("back") || label.includes("rear") || label.includes("environment")) &&
+          !label.includes("wide") &&
+          !label.includes("ultra") &&
+          !label.includes("macro") &&
+          !label.includes("tele")
+        );
+      });
+
+      if (mainRear) return mainRear.deviceId;
+
+      // Fallback: pick the first back-facing camera that isn't explicitly wide
+      const anyRear = videoDevices.find(d => {
+        const label = d.label.toLowerCase();
+        return label.includes("back") || label.includes("rear") || label.includes("0, facing back");
+      });
+
+      return anyRear?.deviceId;
+    } catch {
+      return undefined;
+    }
+  };
+
+  const startCamera = useCallback(async () => {
+    try {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(t => t.stop());
       }
       setCameraError("");
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 1280 } },
-        audio: false,
-      });
+      // First, get any camera to trigger permission (labels are only available after permission)
+      const tempStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      tempStream.getTracks().forEach(t => t.stop());
 
+      // Now find the main camera
+      const mainDeviceId = await findMainCamera();
+
+      const constraints: MediaStreamConstraints = {
+        video: mainDeviceId
+          ? { deviceId: { exact: mainDeviceId }, width: { ideal: 1920 }, height: { ideal: 1440 } }
+          : { facingMode: { ideal: "environment" }, width: { ideal: 4032 }, height: { ideal: 3024 } },
+        audio: false,
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       streamRef.current = stream;
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.onloadedmetadata = () => {
@@ -84,20 +130,19 @@ export function LiveCatalog() {
 
   useEffect(() => {
     if (!capturedPhoto) {
-      startCamera(facingMode);
+      startCamera();
     }
     return () => {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(t => t.stop());
       }
     };
-  }, [facingMode, capturedPhoto]);
+  }, [capturedPhoto]);
 
   const capturePhoto = () => {
     if (!videoRef.current || !canvasRef.current) return;
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    // Make it square (crop center)
     const size = Math.min(video.videoWidth, video.videoHeight);
     canvas.width = size;
     canvas.height = size;
@@ -107,19 +152,48 @@ export function LiveCatalog() {
     ctx.drawImage(video, sx, sy, size, size, 0, 0, size, size);
     const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
     setCapturedPhoto(dataUrl);
-    // Stop camera
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(t => t.stop());
     }
+    // Auto-trigger OCR
+    runOCR(dataUrl);
   };
 
   const retakePhoto = () => {
     setCapturedPhoto(null);
     setCameraReady(false);
+    setItemName("");
+    setOcrDone(false);
   };
 
-  const switchCamera = () => {
-    setFacingMode(f => f === "environment" ? "user" : "environment");
+  // ========== OCR: Auto-detect Item Name ==========
+  const runOCR = async (imageDataUrl: string) => {
+    setOcrLoading(true);
+    setOcrDone(false);
+    try {
+      const { createWorker } = await import("tesseract.js");
+      const worker = await createWorker("eng");
+      const { data } = await worker.recognize(imageDataUrl);
+      await worker.terminate();
+
+      // Extract the most meaningful text line (longest line as product name)
+      const lines = data.text
+        .split("\n")
+        .map(l => l.trim())
+        .filter(l => l.length > 3 && !/^[\d\s.,!@#$%^&*()]+$/.test(l)); // Filter out noise
+
+      if (lines.length > 0) {
+        // Pick the longest meaningful line as the likely product name
+        const bestLine = lines.reduce((a, b) => (a.length > b.length ? a : b), "");
+        setItemName(bestLine);
+      }
+      setOcrDone(true);
+    } catch (err) {
+      console.error("OCR failed:", err);
+      setOcrDone(true);
+    } finally {
+      setOcrLoading(false);
+    }
   };
 
   // ========== Save ==========
@@ -135,7 +209,7 @@ export function LiveCatalog() {
         currency,
         exchange_rate: exchangeRate,
         margin_type: marginType,
-        margin_value: marginValue,
+        margin_value: marginNum,
         final_price_idr: Math.round(finalIDR),
       });
 
@@ -154,22 +228,14 @@ export function LiveCatalog() {
 
   return (
     <div className="min-h-screen bg-black flex flex-col">
-      {/* Hidden canvas for photo capture */}
       <canvas ref={canvasRef} className="hidden" />
 
       {/* Camera / Photo Section */}
-      <div className="relative flex-1 min-h-[340px] max-h-[420px] overflow-hidden bg-gray-900">
+      <div className="relative flex-1 min-h-[320px] max-h-[400px] overflow-hidden bg-gray-900">
         <AnimatePresence mode="wait">
           {capturedPhoto ? (
-            // ── Captured Photo Preview ──
-            <motion.div
-              key="photo"
-              initial={{ opacity: 0, scale: 1.05 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="absolute inset-0"
-            >
+            <motion.div key="photo" initial={{ opacity: 0, scale: 1.05 }} animate={{ opacity: 1, scale: 1 }} className="absolute inset-0">
               <img src={capturedPhoto} alt="Captured" className="w-full h-full object-cover" />
-              {/* Retake button */}
               <div className="absolute top-12 left-4 right-4 flex justify-between">
                 <button onClick={() => navigate("/")} className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center">
                   <ChevronLeft className="w-5 h-5 text-white" />
@@ -179,7 +245,6 @@ export function LiveCatalog() {
                   <span className="text-white text-sm font-medium">Retake</span>
                 </button>
               </div>
-              {/* Success badge */}
               <div className="absolute bottom-4 left-0 right-0 flex justify-center">
                 <div className="bg-green-500/90 backdrop-blur-sm rounded-full px-4 py-2 flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-white" />
@@ -188,29 +253,19 @@ export function LiveCatalog() {
               </div>
             </motion.div>
           ) : (
-            // ── Live Camera View ──
-            <motion.div
-              key="camera"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="absolute inset-0"
-            >
+            <motion.div key="camera" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="absolute inset-0">
               {cameraError ? (
                 <div className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center">
                   <div className="w-16 h-16 rounded-2xl bg-gray-800 flex items-center justify-center mb-4">
                     <ImageIcon className="w-8 h-8 text-gray-500" />
                   </div>
                   <p className="text-gray-400 text-sm mb-4">{cameraError}</p>
-                  <button onClick={() => startCamera(facingMode)} className="text-blue-400 text-sm font-semibold">
-                    Coba Lagi
-                  </button>
+                  <button onClick={startCamera} className="text-blue-400 text-sm font-semibold">Coba Lagi</button>
                 </div>
               ) : (
                 <>
                   <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-                  {/* Camera UI overlay */}
                   <div className="absolute inset-0">
-                    {/* Top bar */}
                     <div className="flex items-center justify-between px-4 pt-12">
                       <button onClick={() => navigate("/")} className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center">
                         <ChevronLeft className="w-5 h-5 text-white" />
@@ -219,12 +274,9 @@ export function LiveCatalog() {
                         <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
                         <span className="text-white text-xs font-semibold">LIVE</span>
                       </div>
-                      <button onClick={switchCamera} className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center">
-                        <RotateCcw className="w-5 h-5 text-white" />
-                      </button>
+                      <div className="w-10" /> {/* Spacer */}
                     </div>
 
-                    {/* Scanning frame */}
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                       <div className="relative w-56 h-56">
                         <div className="absolute top-0 left-0 w-8 h-8 border-t-[3px] border-l-[3px] border-white/60 rounded-tl-lg" />
@@ -234,13 +286,8 @@ export function LiveCatalog() {
                       </div>
                     </div>
 
-                    {/* Capture button */}
                     <div className="absolute bottom-6 left-0 right-0 flex justify-center">
-                      <button
-                        onClick={capturePhoto}
-                        disabled={!cameraReady}
-                        className="w-[72px] h-[72px] rounded-full bg-white/20 border-4 border-white flex items-center justify-center active:scale-90 transition-transform disabled:opacity-50"
-                      >
+                      <button onClick={capturePhoto} disabled={!cameraReady} className="w-[72px] h-[72px] rounded-full bg-white/20 border-4 border-white flex items-center justify-center active:scale-90 transition-transform disabled:opacity-50">
                         <div className="w-[56px] h-[56px] rounded-full bg-white" />
                       </button>
                     </div>
@@ -253,26 +300,41 @@ export function LiveCatalog() {
       </div>
 
       {/* Bottom Form */}
-      <motion.div
-        initial={{ y: 50, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.2 }}
-        className="bg-white rounded-t-3xl shadow-2xl px-5 pt-4 pb-8 flex-1 overflow-y-auto"
-      >
+      <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }} className="bg-white rounded-t-3xl shadow-2xl px-5 pt-4 pb-8 flex-1 overflow-y-auto">
         <div className="flex justify-center mb-4">
           <div className="w-10 h-1 bg-gray-200 rounded-full" />
         </div>
 
         <div className="space-y-3">
-          {/* Item Name */}
+          {/* Item Name with OCR status */}
           <div>
-            <label className="text-sm text-gray-500 mb-1.5 block">Item Name</label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-sm text-gray-500">Item Name</label>
+              {ocrLoading && (
+                <div className="flex items-center gap-1.5 bg-blue-50 px-2.5 py-1 rounded-lg">
+                  <Loader2 className="w-3 h-3 text-blue-500 animate-spin" />
+                  <span className="text-blue-600 text-[11px] font-semibold">Detecting text...</span>
+                </div>
+              )}
+              {ocrDone && !ocrLoading && itemName && (
+                <div className="flex items-center gap-1.5 bg-green-50 px-2.5 py-1 rounded-lg">
+                  <Sparkles className="w-3 h-3 text-green-500" />
+                  <span className="text-green-600 text-[11px] font-semibold">Auto-detected</span>
+                </div>
+              )}
+              {ocrDone && !ocrLoading && !itemName && (
+                <div className="flex items-center gap-1.5 bg-amber-50 px-2.5 py-1 rounded-lg">
+                  <ScanText className="w-3 h-3 text-amber-500" />
+                  <span className="text-amber-600 text-[11px] font-semibold">Ketik manual</span>
+                </div>
+              )}
+            </div>
             <div className="relative">
               <Tag className="w-4 h-4 text-gray-400 absolute left-4 top-1/2 -translate-y-1/2" />
               <input
                 value={itemName}
                 onChange={(e) => setItemName(e.target.value)}
-                placeholder="Ketik nama produk..."
+                placeholder={ocrLoading ? "Mendeteksi nama produk..." : "Ketik nama produk..."}
                 className="w-full h-[52px] bg-[#F4F6FA] rounded-xl pl-10 pr-4 text-gray-800 font-medium border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -280,69 +342,60 @@ export function LiveCatalog() {
 
           {/* Base Price */}
           <div>
-            <label className="text-sm text-gray-500 mb-1.5 block">
-              Base Price ({currency})
-            </label>
+            <label className="text-sm text-gray-500 mb-1.5 block">Base Price ({currency})</label>
             <div className="relative">
               <div className="absolute left-4 top-1/2 -translate-y-1/2 bg-blue-100 rounded-md px-2 py-0.5">
                 <span className="text-blue-700 text-xs font-bold">{currency}</span>
               </div>
-              <input
-                type="number"
-                value={basePrice}
-                onChange={(e) => setBasePrice(e.target.value)}
-                className="w-full h-[52px] bg-[#F4F6FA] rounded-xl pl-16 pr-4 text-gray-800 font-medium border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="0.00"
-              />
+              <input type="number" value={basePrice} onChange={(e) => setBasePrice(e.target.value)} className="w-full h-[52px] bg-[#F4F6FA] rounded-xl pl-16 pr-4 text-gray-800 font-medium border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="0.00" />
             </div>
             {basePriceNum > 0 && (
               <div className="flex items-center gap-1 mt-1">
                 <Info className="w-3 h-3 text-gray-400" />
-                <span className="text-xs text-gray-500">
-                  = {formatIDR(baseIDR)} (@ {exchangeRate.toLocaleString("id-ID")} IDR)
-                </span>
+                <span className="text-xs text-gray-500">= {formatIDR(baseIDR)} (@ {exchangeRate.toLocaleString("id-ID")} IDR)</span>
               </div>
             )}
           </div>
 
-          {/* Margin Info (read-only, from Settings) */}
-          <div className="bg-[#F4F6FA] rounded-xl p-3.5 flex items-center justify-between">
-            <div>
-              <p className="text-xs text-gray-400">Margin / Jasa</p>
-              <p className="text-sm font-semibold text-gray-700 mt-0.5">
-                {marginType === "percent" ? `${marginConfig.value}%` : `Rp ${Number(marginConfig.value).toLocaleString("id-ID")}`}
-              </p>
+          {/* Margin Input — free value, type from Settings */}
+          <div>
+            <label className="text-sm text-gray-500 mb-1.5 block">
+              Margin / Jasa ({marginType === "percent" ? "%" : "Rp"})
+            </label>
+            <div className="relative">
+              <div className="absolute left-4 top-1/2 -translate-y-1/2 bg-green-100 rounded-md px-2 py-0.5">
+                <span className="text-green-700 text-xs font-bold">{marginType === "percent" ? "%" : "Rp"}</span>
+              </div>
+              <input
+                type="number"
+                value={margin}
+                onChange={(e) => setMargin(e.target.value)}
+                className="w-full h-[52px] bg-[#F4F6FA] rounded-xl pl-14 pr-4 text-gray-800 font-medium border border-gray-200 focus:outline-none focus:ring-2 focus:ring-green-500"
+                placeholder={marginType === "percent" ? "20" : "50000"}
+              />
             </div>
-            <button
-              onClick={() => navigate("/settings")}
-              className="text-xs text-[#2563EB] font-semibold bg-blue-50 px-3 py-1.5 rounded-lg"
-            >
-              Ubah di Settings
-            </button>
+            {marginNum > 0 && basePriceNum > 0 && (
+              <div className="flex items-center gap-1 mt-1">
+                <Info className="w-3 h-3 text-gray-400" />
+                <span className="text-xs text-gray-500">
+                  Profit: {formatIDR(marginAmount)} per item
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Final Price Display */}
+        {/* Final Price */}
         <div className="mt-4 bg-gradient-to-r from-[#2563EB] to-[#1d4ed8] rounded-2xl p-4">
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-1.5">
               <Calculator className="w-4 h-4 text-blue-200" />
               <span className="text-blue-200 text-sm">Final IDR Price</span>
             </div>
-            {marginValue > 0 && (
-              <span className="text-blue-200 text-xs">
-                +{marginType === "percent" ? `${marginConfig.value}%` : formatIDR(marginValue)} margin
-              </span>
-            )}
           </div>
           <div className="text-white font-bold" style={{ fontSize: "28px" }}>
             {finalIDR > 0 ? formatIDR(finalIDR) : "Rp —"}
           </div>
-          {finalIDR > 0 && (
-            <div className="text-blue-200 text-xs mt-0.5">
-              Profit: {formatIDR(marginAmount)} per item
-            </div>
-          )}
         </div>
 
         {/* Save Button */}
@@ -350,9 +403,7 @@ export function LiveCatalog() {
           onClick={handleSave}
           disabled={saving || !itemName || basePriceNum <= 0 || !capturedPhoto}
           className={`w-full mt-4 h-[56px] rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg transition-all disabled:opacity-40 ${
-            saved
-              ? "bg-green-500 text-white shadow-green-200"
-              : "bg-gradient-to-r from-green-500 to-green-600 text-white shadow-green-200"
+            saved ? "bg-green-500 text-white" : "bg-gradient-to-r from-green-500 to-green-600 text-white shadow-green-200"
           }`}
         >
           {saved ? (
