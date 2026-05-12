@@ -358,7 +358,8 @@ export function Settings() {
   const currencyDirty = country !== savedState.country || rate !== savedState.rate;
   const dpDirty = dpMandatory !== savedState.dpMandatory || dpType !== savedState.dpType || dpThreshold !== savedState.dpThreshold;
   const catalogDirty = opacity !== savedState.opacity || autoPrice !== savedState.autoPrice || watermark !== savedState.watermark;
-  const anyDirty = currencyDirty || dpDirty || catalogDirty;
+  const marginDirty = marginConfigType !== marginInit.type;
+  const anyDirty = currencyDirty || dpDirty || catalogDirty || marginDirty;
 
   const countryObj = countries.find((c) => c.code === country)!;
 
@@ -422,6 +423,7 @@ export function Settings() {
     if (currencyDirty) newSaved.add("currency");
     if (dpDirty)       newSaved.add("dp");
     if (catalogDirty)  newSaved.add("catalog");
+    if (marginDirty)   newSaved.add("margin");
     setSavedSections(newSaved);
     setSavedState({ country, rate, dpMandatory, dpType, dpThreshold, opacity, autoPrice, watermark });
     // Persist margin & trip config to localStorage
@@ -434,6 +436,7 @@ export function Settings() {
     ...(currencyDirty ? [{ label: "Currency & Exchange Rate", done: false }] : []),
     ...(dpDirty       ? [{ label: "Down Payment Policy",       done: false }] : []),
     ...(catalogDirty  ? [{ label: "Visual Catalog Engine",     done: false }] : []),
+    ...(marginDirty   ? [{ label: "Margin / Jasa Policy",      done: false }] : []),
     { label: "Syncing trip profile", done: false },
   ];
 
@@ -441,30 +444,30 @@ export function Settings() {
     <div className="min-h-screen bg-[#F4F6FA]">
 
       {/* ── Header ─────────────────────────── */}
-      <div className="bg-gradient-to-br from-[#1a4fc4] to-[#2563EB] px-5 pt-12 pb-5">
-        <div className="flex items-center gap-3 mb-3">
-          <button
-            onClick={() => navigate("/")}
-            className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center active:scale-95 transition-transform"
-          >
-            <ChevronLeft className="w-5 h-5 text-white" />
-          </button>
-          <div className="flex-1">
-            <h1 className="text-white font-bold" style={{ fontSize: "22px" }}>
-              Trip Settings
-            </h1>
-            <p className="text-blue-200 text-xs mt-0.5">Configure before your next jastip run</p>
+      <div className="bg-white px-5 pt-14 pb-5 border-b border-gray-100">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => navigate("/")}
+              className="w-10 h-10 rounded-full bg-[#F4F6FA] flex items-center justify-center active:scale-95 transition-transform"
+            >
+              <ChevronLeft className="w-5 h-5 text-gray-600" />
+            </button>
+            <div>
+              <h1 className="text-gray-900 font-bold text-xl">Settings</h1>
+              <p className="text-gray-400 text-xs">Configure your jastip run</p>
+            </div>
           </div>
-          <button className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center">
-            <Bell className="w-4.5 h-4.5 text-white" />
+          <button className="w-10 h-10 rounded-full bg-[#F4F6FA] flex items-center justify-center">
+            <Bell className="w-5 h-5 text-gray-600" />
           </button>
         </div>
 
         {/* Active trip chip */}
-        <div className="flex items-center gap-2 bg-white/15 rounded-2xl px-4 py-3 border border-white/20">
-          <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-          <span className="text-white text-sm font-semibold">Active Trip: 🇸🇬 Singapore</span>
-          <ChevronRight className="w-4 h-4 text-white/60 ml-auto" />
+        <div className="flex items-center gap-2 bg-[#F4F6FA] rounded-2xl px-4 py-3 border border-gray-100">
+          <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+          <span className="text-gray-700 text-sm font-semibold">Active Trip: 🇸🇬 Singapore</span>
+          <ChevronRight className="w-4 h-4 text-gray-400 ml-auto" />
         </div>
       </div>
 
@@ -857,12 +860,11 @@ export function Settings() {
           transition={{ delay: 0.2 }}
           className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden"
         >
-          <div className="flex items-center gap-3 px-4 py-3.5 border-b border-gray-100 bg-green-50/60">
-            <div className="w-9 h-9 rounded-xl bg-green-100 flex items-center justify-center">
-              <Percent className="w-4.5 h-4.5 text-green-600" />
-            </div>
-            <span className="font-semibold text-gray-800 flex-1">Margin / Jasa</span>
-          </div>
+          <SectionHeader
+            icon={Percent} title="Margin / Jasa"
+            isDirty={marginDirty} isSaved={savedSections.has("margin")}
+            iconBg="bg-green-100" iconColor="text-green-600" headerBg="bg-green-50/60"
+          />
 
           <div className="p-4 space-y-4">
             <div>
