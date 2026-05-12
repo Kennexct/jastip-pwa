@@ -20,10 +20,12 @@ import {
   Bell,
   Save,
   LogOut,
+  Percent,
 } from "lucide-react";
 import { useNavigate } from "react-router";
 import { motion, AnimatePresence } from "motion/react";
 import { useAuth } from "../contexts/AuthContext";
+import { saveMarginConfig, getMarginConfig, saveTripConfig } from "../../lib/settings";
 
 /* ─── Data ─────────────────────────────────────────────── */
 const countries = [
@@ -341,6 +343,11 @@ export function Settings() {
   const [autoPrice,    setAutoPrice]     = useState(true);
   const [watermark,    setWatermark]     = useState<string | null>(null);
 
+  /* Margin config (synced with localStorage) */
+  const marginInit = getMarginConfig();
+  const [marginConfigType, setMarginConfigType] = useState<"percent" | "nominal">(marginInit.type);
+  const [marginConfigValue, setMarginConfigValue] = useState(marginInit.value);
+
   /* UI states */
   const [confirm,      setConfirm]       = useState<ConfirmConfig | null>(null);
   const [showSaving,   setShowSaving]    = useState(false);
@@ -417,6 +424,9 @@ export function Settings() {
     if (catalogDirty)  newSaved.add("catalog");
     setSavedSections(newSaved);
     setSavedState({ country, rate, dpMandatory, dpType, dpThreshold, opacity, autoPrice, watermark });
+    // Persist margin & trip config to localStorage
+    saveMarginConfig({ type: marginConfigType, value: marginConfigValue });
+    saveTripConfig({ country, currency: countryObj.currency, exchangeRate: Number(rate) });
     setTimeout(() => setSavedSections(new Set()), 3000);
   };
 
@@ -840,11 +850,77 @@ export function Settings() {
           </div>
         </motion.div>
 
+        {/* ── Section 4: Margin / Jasa ───── */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden"
+        >
+          <div className="flex items-center gap-3 px-4 py-3.5 border-b border-gray-100 bg-green-50/60">
+            <div className="w-9 h-9 rounded-xl bg-green-100 flex items-center justify-center">
+              <Percent className="w-4.5 h-4.5 text-green-600" />
+            </div>
+            <span className="font-semibold text-gray-800 flex-1">Margin / Jasa</span>
+          </div>
+
+          <div className="p-4 space-y-4">
+            <div>
+              <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2.5 block">
+                Calculation Method
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {(["percent", "nominal"] as const).map((type) => (
+                  <button
+                    key={type}
+                    onClick={() => setMarginConfigType(type)}
+                    className={`h-[56px] rounded-2xl border-2 font-bold text-sm transition-all flex items-center justify-center gap-2 ${
+                      marginConfigType === type
+                        ? "border-green-400 bg-green-50 text-green-700"
+                        : "border-gray-200 bg-[#F4F6FA] text-gray-500"
+                    }`}
+                  >
+                    <span className={`w-7 h-7 rounded-xl flex items-center justify-center text-sm ${marginConfigType === type ? "bg-green-200" : "bg-gray-200"}`}>
+                      {type === "percent" ? "%" : "Rp"}
+                    </span>
+                    {type === "percent" ? "Percentage" : "Fixed Amount"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 block">
+                Default Margin Value
+              </label>
+              <div className="relative">
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 w-8 h-8 rounded-xl bg-green-100 flex items-center justify-center">
+                  <span className="text-green-700 font-black text-sm">{marginConfigType === "percent" ? "%" : "Rp"}</span>
+                </div>
+                <input
+                  type="number"
+                  value={marginConfigValue}
+                  onChange={(e) => setMarginConfigValue(e.target.value)}
+                  className="w-full h-[56px] bg-[#F4F6FA] rounded-2xl pl-16 pr-4 text-gray-900 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent"
+                  placeholder={marginConfigType === "percent" ? "20" : "50000"}
+                />
+              </div>
+              <div className="mt-2.5 bg-green-50 rounded-xl px-3.5 py-2.5 border border-green-100">
+                <p className="text-green-800 text-xs">
+                  {marginConfigType === "percent"
+                    ? `For a Rp 500.000 item → Margin: Rp ${(500000 * Number(marginConfigValue || 0) / 100).toLocaleString("id-ID")}`
+                    : `Fixed margin of Rp ${Number(marginConfigValue || 0).toLocaleString("id-ID")} per item`}
+                </p>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+
         {/* ── Save CTA ───────────────────── */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
+          transition={{ delay: 0.25 }}
         >
           <button
             onClick={handleSave}
