@@ -7,6 +7,8 @@ import { LiveCatalog } from "./pages/LiveCatalog";
 import { CatalogList } from "./pages/CatalogList";
 import { Fulfillment } from "./pages/Fulfillment";
 import { Reports } from "./pages/Reports";
+import { WishlistCapture } from "./pages/WishlistCapture";
+import { WishlistFulfill } from "./pages/WishlistFulfill";
 import { Login } from "./pages/Auth/Login";
 import { Register } from "./pages/Auth/Register";
 import { ProtectedRoute } from "./components/ProtectedRoute";
@@ -28,7 +30,10 @@ export const router = createBrowserRouter([
           { path: "fulfillment", Component: Fulfillment },
           { path: "reports", Component: Reports },
         ],
-      }
+      },
+      // Full-screen pages (no bottom nav)
+      { path: "wishlist/capture/:id", Component: WishlistCapture },
+      { path: "wishlist/fulfill/:id", Component: WishlistFulfill },
     ],
   },
   { path: "/login", Component: Login },

@@ -11,7 +11,10 @@ export type WishlistItem = {
   est_price: number;
   dp_amount: number;
   dp_status: 'pending' | 'partial' | 'paid';
+  status: 'pending' | 'hunting' | 'fulfilled' | 'cancelled';
+  phone: string | null;
   image_url: string | null;
+  fulfilled_at: string | null;
   created_at: string;
 };
 
@@ -25,6 +28,41 @@ export type CatalogItem = {
   margin_type: 'percent' | 'nominal';
   margin_value: number;
   final_price_idr: number;
+  qty?: number;
+  photo_url?: string | null;
+  created_at: string;
+};
+
+export type Sale = {
+  id: string;
+  user_id: string;
+  wishlist_item_id: string | null;
+  customer_name: string;
+  item_name: string;
+  qty: number;
+  base_price: number;
+  currency: string;
+  exchange_rate: number;
+  margin_type: 'percent' | 'nominal';
+  margin_value: number;
+  final_price_idr: number;
+  dp_amount: number;
+  total_paid: number;
+  remaining: number;
+  photo_url: string | null;
+  canvas_image_url: string | null;
+  status: 'pending_dp' | 'dp_paid' | 'fulfilled' | 'completed';
+  fulfilled_at: string | null;
+  created_at: string;
+};
+
+export type Payment = {
+  id: string;
+  sale_id: string;
+  user_id: string;
+  amount: number;
+  payment_method: 'transfer' | 'cash' | 'ewallet';
+  note: string | null;
   created_at: string;
 };
 
@@ -39,7 +77,7 @@ export async function getWishlistItems() {
   return data as WishlistItem[];
 }
 
-export async function addWishlistItem(item: Omit<WishlistItem, 'id' | 'created_at'>) {
+export async function addWishlistItem(item: Omit<WishlistItem, 'id' | 'created_at' | 'fulfilled_at'>) {
   const { data, error } = await supabase
     .from('wishlist_items')
     .insert(item)
@@ -73,6 +111,18 @@ export async function updateWishlistPrice(id: string, actualPrice: number) {
   if (error) throw error;
 }
 
+export async function updateWishlistStatus(id: string, status: WishlistItem['status']) {
+  const updates: Record<string, unknown> = { status };
+  if (status === 'fulfilled') {
+    updates.fulfilled_at = new Date().toISOString();
+  }
+  const { error } = await supabase
+    .from('wishlist_items')
+    .update(updates)
+    .eq('id', id);
+  if (error) throw error;
+}
+
 // ==================== CATALOG ====================
 
 export async function getCatalogItems() {
@@ -102,29 +152,142 @@ export async function deleteCatalogItem(id: string) {
   if (error) throw error;
 }
 
+// ==================== SALES ====================
+
+export async function getSales() {
+  const { data, error } = await supabase
+    .from('sales')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data as Sale[];
+}
+
+export async function getSalesByCustomer(customerName: string) {
+  const { data, error } = await supabase
+    .from('sales')
+    .select('*')
+    .eq('customer_name', customerName)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data as Sale[];
+}
+
+export async function addSale(sale: Omit<Sale, 'id' | 'created_at'>) {
+  const { data, error } = await supabase
+    .from('sales')
+    .insert(sale)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as Sale;
+}
+
+export async function updateSalePayment(id: string, totalPaid: number, remaining: number) {
+  const status = remaining <= 0 ? 'completed' : 'dp_paid';
+  const { error } = await supabase
+    .from('sales')
+    .update({ total_paid: totalPaid, remaining, status })
+    .eq('id', id);
+  if (error) throw error;
+}
+
+export async function updateSaleStatus(id: string, status: Sale['status']) {
+  const updates: Record<string, unknown> = { status };
+  if (status === 'fulfilled') {
+    updates.fulfilled_at = new Date().toISOString();
+  }
+  const { error } = await supabase
+    .from('sales')
+    .update(updates)
+    .eq('id', id);
+  if (error) throw error;
+}
+
+// ==================== PAYMENTS ====================
+
+export async function getPaymentsBySale(saleId: string) {
+  const { data, error } = await supabase
+    .from('payments')
+    .select('*')
+    .eq('sale_id', saleId)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return data as Payment[];
+}
+
+export async function getAllPayments() {
+  const { data, error } = await supabase
+    .from('payments')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data as Payment[];
+}
+
+export async function addPayment(payment: Omit<Payment, 'id' | 'created_at'>) {
+  // 1. Insert payment record
+  const { data, error } = await supabase
+    .from('payments')
+    .insert(payment)
+    .select()
+    .single();
+  if (error) throw error;
+
+  // 2. Get the sale to recalculate totals
+  const { data: sale, error: saleErr } = await supabase
+    .from('sales')
+    .select('*')
+    .eq('id', payment.sale_id)
+    .single();
+  if (saleErr) throw saleErr;
+
+  // 3. Get all payments for this sale to sum up
+  const { data: allPayments, error: payErr } = await supabase
+    .from('payments')
+    .select('amount')
+    .eq('sale_id', payment.sale_id);
+  if (payErr) throw payErr;
+
+  const totalPaid = (allPayments || []).reduce((sum, p) => sum + Number(p.amount), 0);
+  const totalBill = Number(sale.final_price_idr) * Number(sale.qty);
+  const remaining = Math.max(0, totalBill - totalPaid);
+
+  // 4. Update sale totals and status
+  await updateSalePayment(payment.sale_id, totalPaid, remaining);
+
+  return data as Payment;
+}
+
 // ==================== DASHBOARD STATS ====================
 
 export async function getDashboardStats() {
-  const [wishlistRes, catalogRes] = await Promise.all([
+  const [wishlistRes, catalogRes, salesRes] = await Promise.all([
     supabase.from('wishlist_items').select('*'),
     supabase.from('catalog_items').select('*'),
+    supabase.from('sales').select('*'),
   ]);
 
   const wishlist = (wishlistRes.data || []) as WishlistItem[];
   const catalog = (catalogRes.data || []) as CatalogItem[];
+  const sales = (salesRes.data || []) as Sale[];
 
-  const pendingWishlist = wishlist.filter(w => w.dp_status === 'pending' || w.dp_status === 'partial').length;
-  const completedWishlist = wishlist.filter(w => w.dp_status === 'paid').length;
+  const pendingWishlist = wishlist.filter(w => w.status === 'pending' || w.status === 'hunting').length;
+  const completedWishlist = wishlist.filter(w => w.status === 'fulfilled').length;
   const readyStock = catalog.length;
-  const totalProfit = catalog.reduce((sum, c) => {
-    const baseIDR = c.base_price * c.exchange_rate;
-    return sum + (c.final_price_idr - baseIDR);
-  }, 0);
-  const unpaidBills = wishlist
-    .filter(w => w.dp_status !== 'paid')
-    .reduce((sum, w) => sum + Math.max(0, w.est_price - w.dp_amount), 0);
 
-  // Recent activity: combine latest from both tables
+  // Calculate profit from sales
+  const totalProfit = sales.reduce((sum, s) => {
+    const baseIDR = Number(s.base_price) * Number(s.exchange_rate);
+    return sum + (Number(s.final_price_idr) - baseIDR) * Number(s.qty);
+  }, 0);
+
+  // Outstanding = total remaining across all unpaid sales
+  const unpaidBills = sales
+    .filter(s => s.status !== 'completed')
+    .reduce((sum, s) => sum + Number(s.remaining), 0);
+
+  // Recent activity: combine latest from wishlist and sales
   const recentWishlist = wishlist.slice(0, 3).map(w => ({
     id: w.id,
     name: w.item_name,

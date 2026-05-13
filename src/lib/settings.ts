@@ -11,8 +11,13 @@ export type TripConfig = {
   exchangeRate: number;
 };
 
+export type DpConfig = {
+  mandatory: boolean;
+};
+
 const MARGIN_KEY = 'jastipflow_margin_config';
 const TRIP_KEY = 'jastipflow_trip_config';
+const DP_KEY = 'jastipflow_dp_config';
 
 export function getMarginConfig(): MarginConfig {
   try {
@@ -36,4 +41,16 @@ export function getTripConfig(): TripConfig {
 
 export function saveTripConfig(config: TripConfig) {
   localStorage.setItem(TRIP_KEY, JSON.stringify(config));
+}
+
+export function getDpConfig(): DpConfig {
+  try {
+    const raw = localStorage.getItem(DP_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return { mandatory: false };
+}
+
+export function saveDpConfig(config: DpConfig) {
+  localStorage.setItem(DP_KEY, JSON.stringify(config));
 }

@@ -58,6 +58,8 @@ export function CatalogList() {
         est_price: sellItem.final_price_idr,
         dp_amount: dpStatus === "paid" ? sellItem.final_price_idr : 0,
         dp_status: dpStatus,
+        status: dpStatus === "paid" ? "hunting" : "pending",
+        phone: null,
         image_url: null,
       });
       await deleteCatalogItem(sellItem.id);
